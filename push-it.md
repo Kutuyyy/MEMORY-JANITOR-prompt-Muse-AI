@@ -1,0 +1,1 @@
+Prompt sudah saya update (aturan urutan Phase 2→3 diperbaiki). Sekarang jalankan Phase 3: sync, lalu echo 3 > /proc/sys/vm/drop_caches, ukur before/after-nya. Kalau drop_caches ditolak sistem (read-only), jalankan Phase 4 pressure test.
