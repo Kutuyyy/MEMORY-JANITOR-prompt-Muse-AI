@@ -20,7 +20,8 @@ endangering production services.
 | # | File | Purpose | When to send |
 |---|------|---------|--------------|
 | 1 | [`memory-janitor-prompt.md`](memory-janitor-prompt.md) | Installs the specialist (role, phases, safety rules) | Once, as system prompt or at chat start |
-| 2 | [`push-it.md`](push-it.md) | Triggers execution (Phase 3 → Phase 4 fallback) | Every time you want a cleanup run |
+| 2 | [`push-it.md`](push-it.md) | Manual trigger — full cycle + deep cycles | Every time you want a cleanup run |
+| 3 | [`autorun.md`](autorun.md) | Autonomous trigger — checks RAM, acts only if < 1 GB | As a scheduled / recurring task |
 
 ### Step 1 — Install the specialist (Prompt 1)
 
@@ -32,7 +33,17 @@ start Phase 1 diagnostics immediately — no setup questions.
 > ⚠️ Before first use, customize the **PRODUCTION SERVICES** list in §0 of
 > the prompt with your own services. The entries there are only an example.
 
-### Step 2 — Execute (Prompt 2)
+### Step 2a — Execute manually
+
+Send the content of [`push-it.md`](push-it.md) (see the quote below).
+
+### Step 2b — Run autonomously
+
+Send the content of [`autorun.md`](autorun.md) as a recurring task (e.g. cron
+every 10 minutes). Each run the agent checks memory: available ≥ 1 GB
+→ stays silent; below 1 GB → runs the full cycle with Phase 4 deep
+cycles, and messages you only when something needs attention (still < 512 MB
+after the cycle, or production impacted).
 
 Send the content of [`push-it.md`](push-it.md):
 
@@ -138,7 +149,8 @@ Production: Discord bot kept serving requests throughout — zero impact.
 .
 ├── README.md                  # this file
 ├── memory-janitor-prompt.md   # the specialist (phases, safety rules) — send first
-└── push-it.md                 # the execution trigger — send to run
+├── push-it.md                 # manual execution trigger — send to run
+└── autorun.md                 # autonomous trigger — checks RAM, acts only if < 1 GB
 ```
 
 ## 📋 Requirements
