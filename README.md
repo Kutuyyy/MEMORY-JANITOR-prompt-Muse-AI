@@ -10,7 +10,7 @@
 Small VMs constantly *look* out of memory when they aren't. `free` reports
 7 GB "used", panic ensues — but most of it is reclaimable page cache, and on
 containers, most of "used" isn't even yours. **MEMORY-JANITOR** exists to end
-that confusion: two prompts that make an AI agent diagnose memory pressure
+that confusion: prompts that make an AI agent diagnose memory pressure
 correctly, reclaim what's safely reclaimable, prove headroom with a guarded
 pressure test, and report honest before/after numbers — without ever
 endangering production services.
@@ -24,14 +24,17 @@ endangering production services.
 
 ### Step 1 — Install the specialist (Prompt 1)
 
-Copy the entire [`prompt1.md`](prompt1.md) into your AI's system prompt or
-custom instructions, or paste it at the start of a chat. The built-in
-**Execution Trigger** makes the agent adopt the role and start Phase 1
-diagnostics immediately — no setup questions.
+Copy the entire [`memory-janitor-prompt.md`](memory-janitor-prompt.md) into
+your AI's system prompt or custom instructions, or paste it at the start of a
+chat. The built-in **Execution Trigger** makes the agent adopt the role and
+start Phase 1 diagnostics immediately — no setup questions.
+
+> ⚠️ Before first use, customize the **PRODUCTION SERVICES** list in §0 of
+> the prompt with your own services. The entries there are only an example.
 
 ### Step 2 — Execute (Prompt 2)
 
-Send the content of [`prompt2.md`](prompt2.md):
+Send the content of [`push-it.md`](push-it.md):
 
 > Jalankan Phase 3: sync, lalu echo 3 > /proc/sys/vm/drop_caches, ukur
 > before/after-nya. Kalau drop_caches ditolak sistem (read-only), jalankan
@@ -40,7 +43,7 @@ Send the content of [`prompt2.md`](prompt2.md):
 The agent runs safe reclamation first, falls back to the pressure test when
 `drop_caches` is blocked, and reports the delta.
 
-## ⚙️ What's Inside Prompt 1
+## ⚙️ What's Inside the Prompt
 
 ```text
 Phase 1   Diagnostics       free, meminfo, per-process RSS, load average
@@ -55,14 +58,14 @@ Phase 5   Report            before/after available + verdict + actions
 | Tier | Action | Safety |
 |------|--------|--------|
 | 0 | `drop_caches` (repeat) | Safe |
-| 1 | `compact_memory` | Safe |
+| 1 | `compact_memory` | Safe (often read-only in containers — then skip) |
 | 2 | Trim optional processes | Ask first |
 | 3 | `malloc_trim` via gdb | Expert, approval required |
 | 4 | Know the ceiling | Report and stop — host-side memory can't be freed from inside |
 
-## 📊 Real Result
+## 📊 Real Results
 
-Actual run on a 7.7 GB container VM:
+### Run 1 — 2026-10-04 · 7.7 GB container VM
 
 ```text
 Memory report — 2026-10-04 09:27 EDT
@@ -78,24 +81,56 @@ Action taken: drop_caches: denied (read-only) → pressure test
 > available melompat ke 4,4 GB — pattern sehat persis seperti ekspektasi di
 > prompt. OOM killer diam total.
 
+### Run 2 — 2026-10-11 · 7.7 GB container VM (prompt v2 field test)
+
+`drop_caches` **and** `compact_memory` both denied (read-only). Four pressure-test
+cycles, each compounding on the last:
+
+```text
+Cycle 1:   383 MB →   530 MB available   (1 chunk, early stop)
+Cycle 2:   534 MB →   886 MB available   (2 chunks)
+Cycle 3:   886 MB →  1666 MB available   (4 chunks)
+Cycle 4:  1666 MB →  6175 MB available   (12 chunks — avalanche at chunk 8:
+                                          141 MB → 3968 MB in two chunks)
+
+Total reclaimed: +5.8 GB available (5% → 78%)
+Production: Discord bot kept serving requests throughout — zero impact.
+```
+
+## 💡 Field Lessons (what the real runs taught us)
+
+1. **Reclaim arrives late, not early.** Shallow cycles (1–2 chunks) barely move
+   the needle. The big wave came at chunk 8 of 12. If a cycle stops early
+   with modest gains, release and run another — gains compound.
+2. **"Host-side" verdicts lie.** Twice the diagnosis said host-side; twice a
+   deep pressure test proved ~4.5 GB was reclaimable stale page cache.
+   The prompt now requires a *deep* Phase 4 before that verdict is valid.
+3. **`drop_caches` denied ⇒ `compact_memory` probably denied too.** In
+   containers they go read-only together — the prompt now skips straight to
+   Phase 4 instead of wasting a round trip.
+4. **Phase 4 auto-runs as the Phase 3 fallback.** The old wording
+   ("proceed to Phase 4" vs "only on explicit request") contradicted itself —
+   fixed: denied `drop_caches` *is* the authorization.
+
 ## 🛡️ Safety
 
 - Phases 1–2 are **read-only** — always safe to run.
 - `drop_caches` only discards *clean* cache (`sync` runs first).
 - Pressure tests set `oom_score_adj=1000` **before** allocating, so the test
   process is always the OOM killer's first victim — production can never be
-  harmed.
+  harmed. Verified across 5 test runs: OOM killer stayed silent every time.
 - Hard limits: no killing production, no presenting "used" without
-  "available", no speculating about invisible host-side consumers.
+  "available", no declaring the host-side ceiling before a deep Phase 4,
+  no speculating about invisible host-side consumers.
 - Every report shows **available before/after** — the delta is the proof.
 
 ## 📁 Repository Structure
 
 ```text
-memory-janitor/
-├── README.md       # this file
-├── prompt1.md      # the specialist (phases, safety rules) — send first
-└── prompt2.md      # the execution trigger — send to run
+.
+├── README.md                  # this file
+├── memory-janitor-prompt.md   # the specialist (phases, safety rules) — send first
+└── push-it.md                 # the execution trigger — send to run
 ```
 
 ## 📋 Requirements
