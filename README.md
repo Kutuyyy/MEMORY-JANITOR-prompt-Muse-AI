@@ -36,12 +36,20 @@ start Phase 1 diagnostics immediately — no setup questions.
 
 Send the content of [`push-it.md`](push-it.md):
 
-> Jalankan Phase 3: sync, lalu echo 3 > /proc/sys/vm/drop_caches, ukur
-> before/after-nya. Kalau drop_caches ditolak sistem (read-only), jalankan
-> Phase 4 pressure test.
+> Run the full MEMORY-JANITOR cycle: start with Phase 1 (diagnostics +
+> baseline), then Phase 3 (sync, echo 3 > /proc/sys/vm/drop_caches, measure
+> before/after). If drop_caches is denied by the system (read-only), run
+> Phase 4 deep cycles — repeat the pressure test until available memory
+> exceeds 20% or no meaningful reclaim remains (max 4 cycles). Report the
+> delta per cycle plus a final summary.
+>
+> Aggressive variant (proven in the field: 0.4 → 6.2 GB free on a
+> 7.7 GB VM): "push free memory to 3 GB" — keep running Phase 4 deep
+> cycles until the target is reached, then report.
 
-The agent runs safe reclamation first, falls back to the pressure test when
-`drop_caches` is blocked, and reports the delta.
+The agent runs safe reclamation first, falls back to deep pressure-test
+cycles when `drop_caches` is blocked, and reports the delta. For a maximum
+push, use the aggressive variant with an explicit free-memory target.
 
 ## ⚙️ What's Inside the Prompt
 
